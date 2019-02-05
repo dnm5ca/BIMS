@@ -1,0 +1,521 @@
+---
+title: "Regression"
+author: "Marieke K Jones PhD"
+date: "2019-01-04"
+output:
+  html_document:
+    keep_md: yes
+---
+
+**Intro Slides (UP TO SLIDE 6)**
+packages needed today are tidyverse, lme4, lmerTest
+
+**Get data files and create new project in RStudio**
+
+## Our data: NHANES
+
+### About NHANES
+
+The data we're going to work with comes from the National Health and Nutrition Examination Survey (NHANES) program at the CDC. You can read a lot more about NHANES on the [CDC's website](http://www.cdc.gov/nchs/nhanes/) or [Wikipedia](https://en.wikipedia.org/wiki/National_Health_and_Nutrition_Examination_Survey). 
+
+NHANES is a research program designed to assess the health and nutritional status of adults and children in the United States. The survey is one of the only to combine both survey questions and physical examinations. It began in the 1960s and since 1999 examines a nationally representative sample of about 5,000 people each year. The NHANES interview includes demographic, socioeconomic, dietary, and health-related questions.
+
+```{r}
+library(tidyverse)
+library(lme4)
+
+nh <- read_csv("nhanes.csv")
+```
+
+> _**A note on characters versus factors:**_ One thing that you immediately notice is that all the categorical variables are read in as _character_ data types. This data type is used for storing strings of text, for example, IDs, names, descriptive text, etc. There's another related data type called _**factors**_. Factor variables are used to represent categorical variables with two or more _levels_, e.g., "male" or "female" for Gender, or "Single" versus "Committed" for RelationshipStatus. For the most part, statistical analysis treats these two data types the same. It's often easier to leave categorical variables as characters. However, in some cases you may get a warning message alerting you that a character variable was converted into a factor variable during analysis. Generally, these warnings are nothing to worry about. You can, if you like, convert individual variables to factor variables, or simply use dplyr's `mutate_if` to convert all character vectors to factor variables:
+
+```{r asfactor, eval=TRUE, results="hide"}
+nh
+nh <- nh %>% mutate_if(is.character, as.factor)
+nh
+```
+
+The nhanes dataset contains observations from both adults and children. Let's perform our analyses on just adults
+
+```{r adults}
+adults <- nh %>% filter(Age >= 18)
+```
+
+### Linear regression with continuous X
+We'll begin today's session with a review of linear regression
+
+Slides 6-11
+
+Let's look at the relationship between height and weight.
+
+```{r}
+fit <- lm(Weight~Height, data=adults)
+summary(fit)
+#confint(fit) #to get out confidence intervals for LM
+```
+
+The relationship is highly significant (P<$2.2 \times 10^{-16}$). The intercept term is not very useful most of the time. Here it shows us what the value of Weight would be when Height=0cm, which could never happen. The Height coefficient is meaningful -- each one cm increase in height results in a 0.92 kg increase in weight. 
+
+Check out the R^2
+
+
+Let's visualize that relationship:
+
+```{r scatter_height_weight_lm}
+ggplot(adults, aes(x=Height, y=Weight)) + geom_point() +
+  geom_smooth(method="lm")
+```
+
+By default, this is only going to show the prediction over the range of the data. This is important! _Friends don't let friends extrapolate_
+
+Assumptions of linear model:
+1. Random Sampling
+2. Equal variance across levels of X
+3. Normality of residuals
+4. Independent residuals
+5. Linear relationship between X and Y
+
+To check these assumptions, R has a nice built-in plotting feature
+```{r residuals}
+plot(fit) #normality not perfect...but robust to departures --> ok
+```
+
+### EXERCISE 1 ###
+** YOUR TURN **
+This should mostly be a review from last session. 
+
+1. Starting with the nhanes dataset, create a dataset of children aged 2-10
+```{r, echo=FALSE}
+kids <- nh %>% filter(between(Age, 2, 10))
+kids
+```
+
+2. Fit a linear model of `Height` against `Age` for the dataset of the children. Assign this to an object called `fit`. 
+```{r, echo=FALSE}
+fit <- lm(Height ~ Age, data = kids)
+fit
+```
+
+3. Get some `summary()` statistics on the fit. What is your interpretation of the output?
+```{r, echo=FALSE}
+summary(fit)
+```
+
+4. Create a plot showing the data and the linear model relationship.
+```{r, echo=FALSE}
+kids %>%
+  ggplot(aes(Age, Height)) + geom_point() + geom_smooth(method = "lm")
+```
+
+### Multiple regression
+Slides 7-11
+
+Most biological problems cannot easily be explained by one variable. Typically several predictors influence an outcome. Let's do a multiple linear regression analysis, where we attempt to model the effect of multiple predictor variables at once on some outcome. First, let's look at the effect of physical activity on testosterone levels.
+
+```{r}
+summary(lm(Testosterone~PhysActive, data=adults))
+```
+
+The p-value is significant (p=0.01516), and the result suggests that increased physical activity is associated with increased testosterone levels. Does increasing your physical activity increase your testosterone levels? Or is it the other way -- will increased testosterone encourage more physical activity? Or is it none of the above -- is the apparent relationship between physical activity and testosterone levels only apparent because both are correlated with yet a third, unaccounted for variable? Notice that the R^2 value is quite low suggesting that we have not done a good job of explaining our Y quite yet.
+
+Let's throw Age into the model as well.
+
+```{r}
+summary(lm(Testosterone~PhysActive+Age, data=adults))
+```
+
+This shows us that after accounting for age that the testosterone / physical activity link is no longer significant. Every 1-year increase in age results in a highly significant decrease in testosterone, and since increasing age is also likely associated with decreased physical activity, perhaps age is the  confounder that makes this relationship apparent.
+
+Adding other predictors can also swing things the other way. We know that men have much higher testosterone levels than females. Sex is probably the single best predictor of testosterone levels in our dataset. By not accounting for this effect, our unaccounted-for variation remains very high (low $$R^{2}$$). By accounting for Gender, we now reduce the residual error in the model, and the physical activity effect once again becomes significant. Also notice that our model fits much better (higher R-squared), and is much more significant overall.
+
+```{r}
+summary(lm(Testosterone ~ PhysActive+Age+Gender, data=adults))
+```
+
+The way that we have modeled is called forward selection where we start with a simple model and then add predictors, one at a time to determine each predictor's influence.
+
+We could also use a likelihood ratio test where we compare nested models to determine whether the addition of a term was "worth it".
+
+Let's conduct a likelihood ratio test on the below two models to determine whether PhysActive belongs in the model
+```{r}
+redfit <- lm(Testosterone ~ Age+Gender, data=adults)
+fit1 <- lm(Testosterone ~ PhysActive+Age+Gender, data=adults)
+
+anova(redfit, fit1) #just barely but yes, keep PhysActive
+```
+
+
+### EXERCISE 2 ###
+** YOUR TURN **
+1. Examine the relationship between HDL cholesterol levels (`HDLChol`) and whether someone has diabetes or not (`Diabetes`).
+- Is there a difference between diabetics and nondiabetics? Perform a linear model to find out.
+```{r, echo=FALSE}
+summary(lm(HDLChol ~ Diabetes, data = adults))
+```
+
+- Does the relationship hold when adjusting for `Weight`?
+```{r, echo=FALSE}
+summary(lm(HDLChol ~ Diabetes + Weight, data = adults))
+```
+
+FYI, in case you thought to use likelihood ratio test for the above.
+```{r}
+redfit <- lm(HDLChol ~ Diabetes, data = adults)
+fit <- lm(HDLChol ~ Diabetes + Weight, data = adults)
+# anova(redfit, fit) error
+```
+
+Instead, you need to first make a dataset where these 2 variables are not missing
+```{r}
+pres <- adults %>%
+  filter(!is.na(Diabetes) & !is.na(Weight))
+
+redfit <- lm(HDLChol ~ Diabetes, data = pres)
+fit <- lm(HDLChol ~ Diabetes + Weight, data = pres)
+anova(redfit, fit) #keep weight
+```
+
+- What about when adjusting for `Weight`, `Age`, `Gender`, `PhysActive` (whether someone participates in moderate or vigorous-intensity sports, fitness or recreational activities, coded as yes/no). What is the effect of each of these explanatory variables?
+
+```{r, echo=FALSE}
+summary(lm(HDLChol ~ Diabetes + Weight + Age, data = adults))
+
+summary(lm(HDLChol ~ Diabetes + Weight + Age + Gender, data = adults))
+
+summary(lm(HDLChol ~ Diabetes + Weight + Age + Gender + PhysActive, data = adults))
+```
+
+# -----
+
+A different strategy for model selection is backwards selection where we start with several variables and then determine which to drop first. This time, let's begin with a large model and use information criterion to select terms to drop.
+
+Fit large model to predict Testosterone values
+```{r}
+fit <- lm(Testosterone ~ PhysActive + Age + Gender + SleepHrsNight + AlcoholYear + BMI, data=adults)
+drop1(fit, test="F")
+```
+
+Drop AlcoholYear
+```{r}
+fit <- lm(Testosterone ~ PhysActive + Age + Gender + SleepHrsNight + BMI, data=adults)
+drop1(fit, test = "F")
+```
+
+Drop PhysActive
+```{r}
+fit <- lm(Testosterone ~ Gender + SleepHrsNight + Age + TotChol + BMI, data = adults)
+drop1(fit, test = "F") #drop none
+```
+
+Final model has Gender + BMI + SleepHrsNight + Age + TotChol
+```{r}
+summary(lm(Testosterone ~ Gender + SleepHrsNight + Age + TotChol + BMI, data = adults))
+```
+
+### EXERCISE 3 ###
+** YOUR TURN **
+
+Fit a large model to predict `Weight` using `Height`, `Gender`, `Work`, `TotChol`, and `Pulse`.
+```{r, echo=FALSE}
+fit <- lm(Weight ~ Height + Gender + Work + TotChol + Pulse, data = adults)
+```
+
+1. Use the drop1 function to select terms to drop one by one.
+
+2. Continue to drop terms until you reach a final model. Which predictors are in the final model? What is their effect on Weight? Which is the strongest predictor?
+```{r, echo=FALSE}
+drop1(fit)
+
+fit <- lm(Weight ~ Height + Gender + TotChol + Pulse, data = adults)
+drop1(fit)
+
+fit <- lm(Weight ~ Height + Gender + Pulse, data = adults)
+drop1(fit)
+
+summary(lm(Weight ~ Height + Gender + Pulse, data = adults))
+```
+
+# Logistic Regression
+Slides 12 - 14
+
+Until now we've only discussed analyzing _continuous_ outcomes / dependent variables. We've tested for differences in means between _n_ groups using ANOVA, and more general relationships using linear regression. In all of these cases, the dependent variable, i.e., the outcome, or $Y$ variable, was _continuous_. 
+
+But, what if our outcome variable is _discrete_, e.g., "Yes/No", "Mutant/WT", "Case/Control", etc.? Here we use a different set of procedures for assessing significant associations.
+
+What if we wanted to model the discrete outcome, e.g., whether someone is insured, against several other variables, similar to how we did with multiple linear regression? We can't use linear regression because the outcome isn't continuous -- it's binary, either _Yes_ or _No_. For this we'll use _logistic regression_ to model the _log odds_ of binary response. That is, instead of modeling the outcome variable, $Y$, directly against the inputs, we'll model the _log odds_ of the outcome variable.
+
+If $p$ is the probability that the individual is insured, then $\frac{p}{1-p}$ is the [_odds_](https://en.wikipedia.org/wiki/Odds) that person is insured. Then it follows that the linear model is expressed as:
+
+$$log(\frac{p}{1-p}) = \beta_0 + \beta_1 x_1 + \cdots + \beta_k x_k$$
+
+Where $\beta_0$ is the intercept, $\beta_1$ is the increase in the log odds of the outcome for every unit increase in $x_1$, and so on.
+
+Logistic regression is a type of _generalized linear model_ (GLM). We fit GLM models in R using the `glm()` function. It works like the `lm()` function except we specify which GLM to fit using the `family` argument. Logistic regression requires `family=binomial`.
+
+The typical use looks like this:
+
+```r
+mod <- glm(y ~ x, data=yourdata, family='binomial')
+summary(mod)
+```
+
+Before we fit a logistic regression model let's _relevel_ the Race variable so that "White" is the baseline. We saw above that people who identify as "White" have the highest rates of being insured. When we run the logistic regression, we'll get a separate coefficient (effect) for each level of the factor variable(s) in the model, telling you the increased odds that that level has, _as compared to the baseline group_.
+
+```{r, results="hide"}
+#Look at Race. The default ordering is alphabetical
+adults$Race
+
+# Let's relevel that where the group with the highest rate of insurance is "baseline"
+relevel(adults$Race, ref="White")
+
+# If we're happy with that result, permanently change it
+adults$Race <- relevel(adults$Race, ref="White")
+
+# Or do it the dplyr way
+adults <- adults %>% 
+  mutate(Race=relevel(Race, ref="White"))
+```
+
+Now, let's fit a logistic regression model assessing how the odds of being insured change with different levels of race. 
+
+```{r}
+fit <- glm(Insured~Race, data=adults, family="binomial")
+summary(fit)
+```
+
+The `Estimate` column shows the log of the odds ratio -- how the log odds of having health insurance changes at each level of race compared to White. The P-value for each coefficient is on the far right. This shows that _every_ other race has a _significantly lower_ rate of health insurance coverage as compared to White people. The log odds of being insured for a person who self-identifies as Asian is 0.64 less than the log odds of being insured for a White person.
+
+To get the odds ratio rather than the log odds, we exponentiate
+```{r}
+exp(fit$coefficients)
+```
+The odds of being insured if you are Asian are 0.53 to 1., etc.
+
+As in our multiple linear regression analysis above, are there other important variables that we're leaving out that could alter our conclusions? Lets add a few more variables into the model to see if something else can explain the apparent Race-Insured association. Let's add a few things likely to be involved (Age and Income), and something that's probably irrelevant (hours slept at night).
+
+```{r}
+fit <- glm(Insured ~ Age+Income+SleepHrsNight+Race, data=adults, family="binomial")
+summary(fit)
+drop1(fit, test = "LRT")
+
+fit <- glm(Insured ~ Age+Income+Race, data=adults, family="binomial")
+drop1(fit)
+summary(fit)
+```
+
+A few things become apparent:
+
+1. Age and income are both highly associated with whether someone is insured. Both of these variables are highly significant ($P<2.2 \times 10^{-16}$), and the coefficient (the `Estimate` column) is positive, meaning that for each unit increase in one of these variables, the odds of being insured increases by the corresponding amount.
+1. Hours slept per night is not meaningful at all.
+1. After accounting for age and income, several of the race-specific differences are no longer statistically significant, but others remain so.
+1. The absolute value of the test statistic (column called `z value`) can roughly be taken as an estimate of the "importance" of that variable to the overall model. So, age and income are the most important influences in this model; self-identifying as Hispanic or Mexican are also very highly important, hours slept per night isn't important at all, and the other race categories fall somewhere in between.
+
+
+### EXERCISE 4 ###
+** YOUR TURN **
+1. Model the association between `Diabetes` and `PhysActive` in a logistic regression framework to assess the risk of diabetes using physical activity as a predictor.
+  - Fit a model with just physical activity as a predictor, and display a model summary.
+
+```{r, echo=FALSE}
+summary(glm(Diabetes ~ PhysActive, family = "binomial", data = adults))
+```
+
+  - Add gender to the model, and show a summary.
+  
+```{r, echo=FALSE}
+summary(glm(Diabetes ~ PhysActive + Gender, family = "binomial", data = adults))
+```
+  - Continue adding weight and age to the model. What happens to the gender association?
+  
+```{r, echo=FALSE}
+summary(glm(Diabetes ~ PhysActive + Gender + Weight, family = "binomial", data = adults))
+
+summary(glm(Diabetes ~ PhysActive + Gender + Weight + Age, family = "binomial", data = adults))
+```
+  - Continue and add income to the model. What happens to the original association with physical activity?
+  
+```{r, echo=FALSE}
+summary(glm(Diabetes ~ PhysActive + Gender + Weight + Age + Income, family = "binomial", data = adults))
+```
+
+  - Examine model fit parameters of the above models. Which is the best model and why?
+```{r, echo=FALSE}
+full <- glm(Diabetes ~ PhysActive + Gender + Weight + Age + Income, family = "binomial", data = adults)
+drop1(full) #gender should be dropped
+
+drop1(glm(Diabetes ~ PhysActive + Weight + Age + Income, family = "binomial", data = adults))
+
+summary(glm(Diabetes ~ PhysActive + Weight + Age + Income, family = "binomial", data = adults))
+```
+Although PhysActive is not itself significant, according to the AIC, it does help to explain Diabetes.
+
+There is _much_ more to go into with logistic regression. This lesson only scratches the surface. Missing from this lesson are things like regression diagnostics, model comparison approaches, penalization, interpretation of model coefficients, fitting interaction effects, and much more. Alan Agresti's [_Categorical Data Analysis_](https://www.amazon.com/Categorical-Data-Analysis-Alan-Agresti/dp/0470463635/ref=sr_1_1?ie=UTF8&qid=1473180895&sr=8-1&keywords=categorical+data+analysis&tag=gettgenedone-20) has long been considered the definitive text on this topic. I also recommend Agresti's [_Introduction to Categorical Data Analysis_](https://www.amazon.com/Introduction-Categorical-Data-Analysis/dp/0471226181/ref=sr_1_3?ie=UTF8&qid=1473180895&sr=8-3&keywords=categorical+data+analysis&tag=gettgenedone-20) (a.k.a. "Agresti lite") for a gentler introduction.
+
+# Multinomial Logistic Regression
+Slide 15
+
+What if your outcome variable is not binary (Yes / No, Disease / Healthy, 1 / 0), but instead has several classes. In our NHANES dataset, `Work` is an example of a cateogrical variable with more than 2 levels. Let's say we want to predict a person's working status based on other variables in the dataset.
+
+Multinomial logistic regression is an extension of binary logistic regression but instead of creating one function that models 0 / 1, now we create a family of functions to model membership in each group:
+
+$$Pr(Y = k | X) = \frac{e^ { \beta_{0k} + \beta_{1k} x_1 + \cdots + \beta_{pk} x_p}} {\sum_{l=1}^{K} e^ { \beta_{0l} + \beta_{1l} x_1 + \cdots + \beta_{pl} x_p}}$$
+
+Where $k$ represents group membership, $p$ represents the number of predictors and $l$ represents the number of groups.
+
+We will not have time to cover this topic here, but please see a tutorial of multinomial regression on the [UCLA Institute for Digital Research and Education website](https://stats.idre.ucla.edu/r/dae/multinomial-logistic-regression/)
+
+# Mixed Effects Models
+Slides 16-21
+
+A mixed effects model is a linear model with both fixed effects and random effects. So far we have only seen fixed effects
+
+This type of modeling is especially suitable for clustered, longitudinal, or repeated measures data where data are grouped by random levels and where the response variable is continuous
+
+Example:
+ - rat drink dataset in faraway package. Rats on 3 different drug treatments measured each week for 5 weeks (repeated measures data)
+ - sleepstudy data from lme4 package (we'll use this today)
+
+Random levels means that there are observations that belong to single subject or group that can be thought of as randomly selected from the population
+
+Some excellent resources on the topic:
+1. Julian Faraway. "Extending the Linear Model with R" published by CRC press in 1st Ed. December 2005 and 2nd Ed. March 2016, ISBN 9781584884248
+
+1. Faraway R package
+
+1. [Derek Sonderegger Statistical Methods II course](https://dereksonderegger.github.io/571/11-mixed-effects-models.html)
+
+1. [Ben Bolker's GLMM FAQ](http://bbolker.github.io/mixedmodels-misc/glmmFAQ.html)
+
+
+The first step is to install and load the lme4 library
+```{r}
+library(lme4)
+```
+If the above step fails, try to install the package using `install.packages(lme4)`
+
+Load sleepstudy dataset from lme4 package
+```{r load ss}
+ss <- sleepstudy
+str(ss)
+```
+
+These data consist of the average reaction time per day for subjects in a sleep deprivation study. On day 0 the subjects had their normal amount of sleep. Starting that night they were restricted to 3 hours of sleep per night. The observations represent the average reaction time on a series of tests given each day to each subject.
+
+Look at reaction time for each patient
+```{r plotss}
+ss %>%
+  ggplot(aes(Days, Reaction)) +
+  geom_point() + 
+  facet_wrap(~Subject)
+
+#add line for each subject
+ss %>%
+  ggplot(aes(Days, Reaction)) +
+  geom_point() + 
+  geom_line() +
+  facet_wrap(~Subject, ncol = 6)
+```
+Looks like individual differences will be important. Each subject begins the study with a different baseline reaction time, so we will need a different intercept for each subject and it looks like sleep deprivation affects each person's reaction time differently, so we will likely also need a random slope.
+
+### Fit LM
+```{r}
+summary(lm(Reaction ~ Days, data = ss))
+```
+A linear model finds a significant effect of days. For each additional day of sleep deprivation, average reaction time increases by 10.46 ms. However, this model ignores the fact that several of the measurements come from the same person (violates independent residuals assumption).
+
+### Random intercept (same slope)
+Because the baseline reaction time for each subject is different, let's fit a random intercept model. We are assuming here that the slope is the same for each subject.
+```{r}
+lmm1 <- lmer(Reaction ~ Days + (1 | Subject), data=ss)
+summary(lmm1) #notice no p-values
+
+# if you want p-values, know that their calculation is an approximation that sometimes will not perform well. That is why authors of lme4 have not included them
+library(lmerTest)
+lmm1 <- lmer(Reaction ~ Days + (1 | Subject), data=ss)
+summary(lmm1)
+```
+Interpretation
+Random effects:
+between subject variation (SD) = 37.12 ms
+within subject variation (SD) = 30.99 ms
+
+(Intercept) = 251.40 means expected reaction time at time 0 = 251.4 ms
+
+- Days 10.4673 -> means subjects add 10.5 ms to their reaction time each day
+
+What is the Correlation of Fixed Effects matrix?
+  - see explanation from lme4 author (Doug Bates):
+  - https://stat.ethz.ch/pipermail/r-sig-mixed-models/2009q1/001941.html
+
+See the random effects -- aka the intercept for each subject. aka the Best Linear Unbiased Predictions (BLUPs) 
+```{r}
+ranef(lmm1)
+#reference is 251.40
+```
+These are the predicted effect of subject on intercept.
+For example, For subj 1 we expect an additional 40.78 ms of reaction time at the intercept (251.40. + 40.78 = 292.18) 
+
+Let's plot the regression line for each subject
+```{r}
+ss %>% 
+  mutate(yhat = predict(lmm1)) %>%
+  ggplot(aes(x=Days)) +
+    facet_wrap(~ Subject, ncol=6) + 
+    geom_point(aes(y=Reaction)) + 
+    geom_line(aes(y=Reaction)) +
+    geom_line(aes(y=yhat), color='red')
+```
+
+These don't look bad, but perhaps we can get a better fit by allowing for a varying slope by subject. For example, subjects 330 and 335 need a lower slope while 308, 337 and 350 need a higher slope
+
+### Random intercept and Random slope model
+This model allows each subject to have their own intercept and slope. In other words, the effect of sleep deprivation over days varies by subject (different slopes).
+```{r}
+lmm2 <- lmer(Reaction ~ Days + (Days | Subject), data=ss)
+summary(lmm2)
+```
+Interpretation
+Random effects:
+between subject variation (SD) = 24.74 ms
+within subject variation (SD) = 25.59 ms
+
+Both of these decreased from lmm1
+
+(Intercept) = 251.40 means expected reaction time at time 0 = 251.4 ms
+- Days 10.4673 -> means subjects add 10.5 ms to their reaction time each day
+
+Now there are 2 random effects (intercept and slope)
+```{r}
+ranef(lmm2)
+```
+For subject 1, intercept is 251 + 2.25 and slope is 10.46 + 9.19
+
+Plot for each subject
+```{r}
+ss %>% 
+  mutate(yhat = predict(lmm2)) %>%
+  ggplot(aes(x=Days)) +
+    facet_wrap(~ Subject, ncol=6) + 
+    geom_point(aes(y=Reaction)) + 
+    geom_line(aes(y=Reaction)) +
+    geom_line(aes(y=yhat), color='red')
+
+#would be nice to see these against main regression line
+ss %>% 
+  mutate(yhat = predict(lmm2),
+         yhatT = predict(lmm2, re.form = ~0)) %>%
+  ggplot(aes(x=Days)) +
+  facet_wrap(~ Subject, ncol=6) + 
+  geom_point(aes(y=Reaction)) + 
+  geom_line(aes(y=Reaction)) +
+  geom_line(aes(y=yhat), color='red') +
+  geom_line(aes(y = yhatT))
+```
+
+Check out whether there is a difference between the two models. Because one is nested within the other, we can use the likelihood ratio test
+```{r}
+anova(lmm1, lmm2)
+```
+Random slope and intercept fit the data better than just a random intercept.
+
+** NOTE ** We did not have time to examine the model diagnostics. This is absolutely critical prior to deciding that you have modelled the data well.
